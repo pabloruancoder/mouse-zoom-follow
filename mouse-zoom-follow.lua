@@ -26,14 +26,220 @@ obs = obslua
 local ffi = require("ffi")
 local bit = require("bit")
 
-local SCRIPT_VERSION = "1.3.1"
+local SCRIPT_VERSION = "1.4.0"
 local IS_WINDOWS = (ffi.os == "Windows")
 
-local CROP_FILTER_NAME = "Mouse Zoom (recorte)"
-local SCALE_FILTER_NAME = "Mouse Zoom (escala)"
+local CROP_FILTER_NAME = "Mouse Zoom (crop)"
+local SCALE_FILTER_NAME = "Mouse Zoom (scale)"
 local CURSOR_FILTER_NAME = "Mouse Zoom (cursor)"
 local CURSOR_FILTER_ID = "mouse_zoom_follow_cursor"
-veja 
+-- Nomes usados até a versão 1.3.1; removidos na limpeza.
+local LEGACY_FILTER_NAMES = { "Mouse Zoom (recorte)", "Mouse Zoom (escala)" }
+
+---------------------------------------------------------------------------
+-- Idiomas (Português do Brasil e Inglês)
+---------------------------------------------------------------------------
+
+local STRINGS = {
+    -- Mensagens do log
+    loaded             = { pt = "Mouse Zoom & Follow %s carregado.", en = "Mouse Zoom & Follow %s loaded." },
+    windows_only       = { pt = "Este script suporta apenas Windows no momento.",
+                           en = "This script currently supports Windows only." },
+    raw_fail           = { pt = "Não foi possível ativar a leitura da rodinha/botões do mouse.",
+                           en = "Could not enable mouse wheel/button input." },
+    manual_invalid     = { pt = "Área manual inválida (largura/altura 0); usando detecção automática.",
+                           en = "Invalid manual area (width/height 0); using automatic detection." },
+    source_missing     = { pt = "A fonte '%s' não existe; usando a Captura de Tela da cena atual. Escolha a fonte certa em Ferramentas > Scripts.",
+                           en = "Source '%s' does not exist; using the Display Capture in the current scene. Pick the right source in Tools > Scripts." },
+    no_capture         = { pt = "Nenhuma Captura de Tela encontrada. Adicione uma à cena ou escolha a fonte em Ferramentas > Scripts.",
+                           en = "No Display Capture found. Add one to the scene or pick the source in Tools > Scripts." },
+    source_empty       = { pt = "A fonte '%s' está sem imagem (tamanho 0).", en = "Source '%s' has no image (size 0)." },
+    filters_fail       = { pt = "Não foi possível criar os filtros de zoom na fonte '%s'.",
+                           en = "Could not create the zoom filters on source '%s'." },
+    session_start      = { pt = "Sessão iniciada: fonte '%s' %dx%d, monitor %dx%d @ %d,%d",
+                           en = "Session started: source '%s' %dx%d, monitor %dx%d @ %d,%d" },
+    session_end        = { pt = "Sessão encerrada.", en = "Session ended." },
+    zoom_level         = { pt = "Zoom %.2fx", en = "Zoom %.2fx" },
+    zooming_out        = { pt = "Saindo do zoom", en = "Zooming out" },
+    follow_state       = { pt = "Seguir mouse: %s", en = "Mouse follow: %s" },
+    state_on           = { pt = "ativado", en = "on" },
+    state_off          = { pt = "desativado", en = "off" },
+    render_info        = { pt = "Desenhando cursor: fonte %dx%d, monitor %dx%d @ %d,%d",
+                           en = "Drawing cursor: source %dx%d, monitor %dx%d @ %d,%d" },
+    effect_fail        = { pt = "Não foi possível criar o efeito de desenho do cursor.",
+                           en = "Could not create the cursor drawing effect." },
+    cursor_shown       = { pt = "Cursor real reexibido em '%s'.", en = "Real cursor shown again on '%s'." },
+    cursor_hidden      = { pt = "Cursor real ocultado em '%s'.", en = "Real cursor hidden on '%s'." },
+    cursor_filter_added = { pt = "Filtro de cursor adicionado em '%s'.", en = "Cursor filter added to '%s'." },
+    image_missing      = { pt = "Estilo 'Imagem personalizada' sem imagem escolhida; usando a seta.",
+                           en = "'Custom image' style without an image selected; using the arrow." },
+    hotkeys_restored   = { pt = "Atalhos padrão restaurados. Reabra Configurações > Teclas de atalho para vê-los.",
+                           en = "Default hotkeys restored. Reopen Settings > Hotkeys to see them." },
+    cursor_read_fail   = { pt = "Não foi possível ler a posição do mouse.", en = "Could not read the mouse position." },
+    cursor_pos         = { pt = "Mouse na tela: %d, %d", en = "Mouse on screen: %d, %d" },
+    lang_reload        = { pt = "Idioma alterado. Recarregue o script (↻) para traduzir também os nomes dos atalhos e a descrição.",
+                           en = "Language changed. Reload the script (↻) to also translate the hotkey names and the description." },
+    filter_type_name   = { pt = "Mouse Zoom: cursor personalizado", en = "Mouse Zoom: custom cursor" },
+
+    -- Descrição
+    d_by               = { pt = "Feito por", en = "Made by" },
+    d_intro            = { pt = "Dá zoom na fonte ou cena escolhida em volta do cursor e faz a imagem seguir o mouse. Funciona em qualquer cena onde a fonte aparecer.",
+                           en = "Zooms the chosen source or scene around the cursor and makes the view follow the mouse. Works in any scene where the source appears." },
+    d_mouse            = { pt = "<b>Mouse:</b> <b>Shift + rodinha</b> aumenta/diminui o zoom (configurável abaixo).",
+                           en = "<b>Mouse:</b> <b>Shift + mouse wheel</b> zooms in/out (configurable below)." },
+    d_cursor           = { pt = "<b>Cursor:</b> troque a aparência do cursor, adicione destaque e efeito de clique no grupo \"Cursor do mouse\".",
+                           en = "<b>Cursor:</b> change the cursor appearance and add highlight and click effects in the \"Mouse cursor\" group." },
+    d_keyboard         = { pt = "<b>Teclado</b> (mude em Configurações &gt; Teclas de atalho):",
+                           en = "<b>Keyboard</b> (change in Settings &gt; Hotkeys):" },
+    d_k_toggle         = { pt = "ativar/desativar zoom", en = "toggle zoom" },
+    d_k_hold           = { pt = "zoom enquanto segurar", en = "zoom while held" },
+    d_k_follow         = { pt = "ativar/desativar seguir o mouse", en = "toggle mouse follow" },
+    d_k_inout          = { pt = "aumentar / diminuir zoom", en = "zoom in / out" },
+    d_k_reset          = { pt = "voltar ao nível de zoom padrão", en = "reset to default zoom level" },
+    d_k_center         = { pt = "centralizar no mouse", en = "center on mouse" },
+    d_lang             = { pt = "escolha no topo das configurações abaixo.", en = "choose it at the top of the settings below." },
+
+    -- Atalhos
+    hk_toggle_zoom     = { pt = "Mouse Zoom: Ativar/desativar zoom", en = "Mouse Zoom: Toggle zoom" },
+    hk_hold_zoom       = { pt = "Mouse Zoom: Zoom enquanto segurar", en = "Mouse Zoom: Zoom while held" },
+    hk_toggle_follow   = { pt = "Mouse Zoom: Ativar/desativar seguir o mouse", en = "Mouse Zoom: Toggle mouse follow" },
+    hk_zoom_more       = { pt = "Mouse Zoom: Aumentar zoom", en = "Mouse Zoom: Zoom in" },
+    hk_zoom_less       = { pt = "Mouse Zoom: Diminuir zoom", en = "Mouse Zoom: Zoom out" },
+    hk_reset_level     = { pt = "Mouse Zoom: Voltar ao nível de zoom padrão", en = "Mouse Zoom: Reset to default zoom level" },
+    hk_recenter        = { pt = "Mouse Zoom: Centralizar no mouse", en = "Mouse Zoom: Center on mouse" },
+
+    -- Idioma
+    lang_auto          = { pt = "Automático (idioma do OBS)", en = "Automatic (OBS language)" },
+    lang_pt            = { pt = "Português (Brasil)", en = "Português (Brasil)" },
+    lang_en            = { pt = "English", en = "English" },
+
+    -- Fonte
+    g_source           = { pt = "Fonte", en = "Source" },
+    p_source           = { pt = "Fonte ou cena para dar zoom", en = "Source or scene to zoom" },
+    b_refresh_sources  = { pt = "Atualizar lista de fontes", en = "Refresh source list" },
+    src_auto           = { pt = "Automático (Captura de Tela visível na cena atual)",
+                           en = "Automatic (visible Display Capture in the current scene)" },
+    src_capture_suffix = { pt = "  (Captura de Tela)", en = "  (Display Capture)" },
+    src_scene_suffix   = { pt = "  (Cena inteira)", en = "  (Whole scene)" },
+
+    -- Zoom
+    g_zoom             = { pt = "Zoom", en = "Zoom" },
+    p_zoom_factor      = { pt = "Nível de zoom padrão (x)", en = "Default zoom level (x)" },
+    p_zoom_step        = { pt = "Passo dos atalhos de aumentar/diminuir (x)", en = "Zoom in/out hotkey step (x)" },
+    p_zoom_min         = { pt = "Zoom mínimo (x)", en = "Minimum zoom (x)" },
+    p_zoom_max         = { pt = "Zoom máximo (x)", en = "Maximum zoom (x)" },
+    p_remember         = { pt = "Lembrar o último nível de zoom usado", en = "Remember the last zoom level used" },
+    p_duration         = { pt = "Duração da animação (ms, 0 = instantâneo)", en = "Animation duration (ms, 0 = instant)" },
+    p_easing           = { pt = "Curva da animação", en = "Animation curve" },
+    ease_linear        = { pt = "Linear", en = "Linear" },
+    ease_smooth        = { pt = "Suave (smoothstep)", en = "Smooth (smoothstep)" },
+    ease_cubic         = { pt = "Acelera e desacelera (cúbica)", en = "Ease in and out (cubic)" },
+    ease_quad_out      = { pt = "Desacelera no fim (quadrática)", en = "Ease out (quadratic)" },
+    ease_expo_out      = { pt = "Desacelera forte (exponencial)", en = "Strong ease out (exponential)" },
+    ease_back_out      = { pt = "Com leve ultrapassagem (back)", en = "Slight overshoot (back)" },
+    p_origin           = { pt = "Origem do zoom", en = "Zoom origin" },
+    origin_anchor      = { pt = "Cursor (o ponto sob o mouse fica parado)", en = "Cursor (point under the mouse stays still)" },
+    origin_cursor_center = { pt = "Cursor (centraliza no mouse)", en = "Cursor (center on the mouse)" },
+    origin_center      = { pt = "Centro da área visível", en = "Center of the visible area" },
+    p_sampling         = { pt = "Qualidade da ampliação", en = "Scaling quality" },
+    s_bilinear         = { pt = "Bilinear (mais leve)", en = "Bilinear (lightest)" },
+    s_bicubic          = { pt = "Bicúbico (recomendado)", en = "Bicubic (recommended)" },
+    s_lanczos          = { pt = "Lanczos (mais nítido)", en = "Lanczos (sharpest)" },
+    s_point            = { pt = "Pixels nítidos (ponto)", en = "Sharp pixels (point)" },
+
+    -- Seguir o mouse
+    g_follow           = { pt = "Seguir o mouse", en = "Mouse follow" },
+    p_follow_on_zoom   = { pt = "Seguir o mouse automaticamente ao dar zoom", en = "Follow the mouse automatically when zooming" },
+    p_follow_speed     = { pt = "Velocidade de acompanhamento (50 = instantâneo)", en = "Follow speed (50 = instant)" },
+    p_dead_zone        = { pt = "Zona morta (% central sem mover a câmera)", en = "Dead zone (central % where the view stays still)" },
+    p_follow_outside   = { pt = "Continuar seguindo quando o mouse sair da tela capturada",
+                           en = "Keep following when the mouse leaves the captured screen" },
+    p_idle_timeout     = { pt = "Sair do zoom após mouse parado (s, 0 = nunca)", en = "Zoom out after the mouse is idle (s, 0 = never)" },
+
+    -- Controles pelo mouse
+    g_mouse            = { pt = "Controles pelo mouse", en = "Mouse controls" },
+    p_wheel_enabled    = { pt = "Zoom com a rodinha do mouse", en = "Zoom with the mouse wheel" },
+    p_wheel_mod        = { pt = "Tecla para segurar junto com a rodinha", en = "Key to hold with the wheel" },
+    p_wheel_step       = { pt = "Zoom por clique da rodinha (x)", en = "Zoom per wheel notch (x)" },
+    p_wheel_invert     = { pt = "Inverter direção da rodinha", en = "Invert wheel direction" },
+    p_wheel_duration   = { pt = "Duração da animação da rodinha (ms)", en = "Wheel animation duration (ms)" },
+    p_btn_toggle       = { pt = "Botão: ativar/desativar zoom", en = "Button: toggle zoom" },
+    p_btn_hold         = { pt = "Botão: zoom enquanto segurar", en = "Button: zoom while held" },
+    p_btn_follow       = { pt = "Botão: ativar/desativar seguir", en = "Button: toggle follow" },
+    p_btn_mod          = { pt = "   Tecla junto com o botão", en = "   Key held with the button" },
+    mod_none           = { pt = "Nenhuma", en = "None" },
+    mod_none_wheel     = { pt = "Nenhuma (qualquer rolagem dá zoom)", en = "None (any scroll zooms)" },
+    btn_none           = { pt = "Nenhum", en = "None" },
+    btn_middle         = { pt = "Botão do meio (clique da rodinha)", en = "Middle button (wheel click)" },
+    btn_x1             = { pt = "Botão lateral 1 (voltar)", en = "Side button 1 (back)" },
+    btn_x2             = { pt = "Botão lateral 2 (avançar)", en = "Side button 2 (forward)" },
+
+    -- Cursor
+    g_cursor           = { pt = "Cursor do mouse", en = "Mouse cursor" },
+    p_cursor_style     = { pt = "Aparência do cursor", en = "Cursor appearance" },
+    style_original     = { pt = "Original (cursor capturado pelo OBS)", en = "Original (cursor captured by OBS)" },
+    style_arrow        = { pt = "Seta (cores personalizadas)", en = "Arrow (custom colors)" },
+    style_image        = { pt = "Imagem personalizada (PNG, GIF...)", en = "Custom image (PNG, GIF...)" },
+    style_dot          = { pt = "Ponto colorido", en = "Colored dot" },
+    style_hidden       = { pt = "Oculto", en = "Hidden" },
+    p_cursor_size      = { pt = "Tamanho do cursor (px)", en = "Cursor size (px)" },
+    p_arrow_fill       = { pt = "Cor da seta", en = "Arrow color" },
+    p_arrow_outline    = { pt = "Cor do contorno da seta", en = "Arrow outline color" },
+    p_dot_color        = { pt = "Cor do ponto", en = "Dot color" },
+    p_cursor_image     = { pt = "Imagem do cursor", en = "Cursor image" },
+    image_filter       = { pt = "Imagens (*.png *.gif *.jpg *.jpeg *.bmp *.webp)",
+                           en = "Images (*.png *.gif *.jpg *.jpeg *.bmp *.webp)" },
+    p_image_scale      = { pt = "Escala da imagem", en = "Image scale" },
+    p_hotspot_x        = { pt = "Ponta do cursor na imagem: X (px)", en = "Cursor tip in the image: X (px)" },
+    p_hotspot_y        = { pt = "Ponta do cursor na imagem: Y (px)", en = "Cursor tip in the image: Y (px)" },
+    p_hide_idle        = { pt = "Esconder cursor após parado (s, 0 = nunca)", en = "Hide cursor when idle (s, 0 = never)" },
+    p_keep_size        = { pt = "Manter o tamanho do cursor e dos efeitos durante o zoom",
+                           en = "Keep cursor and effect size while zoomed" },
+    p_halo             = { pt = "Destaque (círculo em volta do cursor)", en = "Highlight (circle around the cursor)" },
+    p_halo_color       = { pt = "   Cor do destaque", en = "   Highlight color" },
+    p_halo_size        = { pt = "   Tamanho do destaque (px)", en = "   Highlight size (px)" },
+    p_click            = { pt = "Efeito de clique", en = "Click effect" },
+    p_click_left       = { pt = "   Cor do clique esquerdo", en = "   Left click color" },
+    p_click_right      = { pt = "   Cor do clique direito", en = "   Right click color" },
+    p_click_size       = { pt = "   Tamanho do efeito (px)", en = "   Effect size (px)" },
+    p_click_duration   = { pt = "   Duração do efeito (ms)", en = "   Effect duration (ms)" },
+
+    -- Monitor
+    g_monitor          = { pt = "Monitor", en = "Monitor" },
+    p_monitor_mode     = { pt = "Tela capturada", en = "Captured screen" },
+    b_refresh_monitors = { pt = "Detectar monitores novamente", en = "Detect monitors again" },
+    mon_auto           = { pt = "Automático (usa o monitor da Captura de Tela)", en = "Automatic (uses the Display Capture's monitor)" },
+    mon_primary        = { pt = " (principal)", en = " (primary)" },
+    mon_manual         = { pt = "Manual (definir a área abaixo)", en = "Manual (set the area below)" },
+    p_manual_x         = { pt = "Área manual: X", en = "Manual area: X" },
+    p_manual_y         = { pt = "Área manual: Y", en = "Manual area: Y" },
+    p_manual_w         = { pt = "Área manual: largura", en = "Manual area: width" },
+    p_manual_h         = { pt = "Área manual: altura", en = "Manual area: height" },
+
+    -- Atalhos e avançado
+    g_advanced         = { pt = "Atalhos e avançado", en = "Hotkeys and advanced" },
+    b_restore_hotkeys  = { pt = "Restaurar atalhos de teclado padrão", en = "Restore default keyboard hotkeys" },
+    b_log_cursor       = { pt = "Mostrar posição do mouse no log", en = "Show mouse position in the log" },
+    p_debug            = { pt = "Registrar mensagens de depuração no log", en = "Write debug messages to the log" },
+}
+
+-- "auto" segue o idioma da interface do OBS: português para pt-*, inglês para o resto.
+local function resolve_lang(choice)
+    if choice == "pt" or choice == "en" then return choice end
+    local locale = obs.obs_get_locale() or ""
+    return locale:lower():sub(1, 2) == "pt" and "pt" or "en"
+end
+
+local LANG = resolve_lang("auto")
+
+-- Texto traduzido; argumentos extras são aplicados com string.format.
+local function T(id, ...)
+    local entry = STRINGS[id]
+    local text = entry and (entry[LANG] or entry.pt) or id
+    if select("#", ...) > 0 then return string.format(text, ...) end
+    return text
+end
+
 ---------------------------------------------------------------------------
 -- Win32
 ---------------------------------------------------------------------------
@@ -196,7 +402,7 @@ local function raw_start()
     end
     if hwnd == nil or not raw_register(hwnd, RIDEV_INPUTSINK) then
         raw.failed = true
-        obs.script_log(obs.LOG_WARNING, "Não foi possível ativar a leitura da rodinha/botões do mouse.")
+        obs.script_log(obs.LOG_WARNING, T("raw_fail"))
         return
     end
     raw.hwnd = hwnd
@@ -430,7 +636,7 @@ local function resolve_monitor(source, src_w, src_h)
     if mode == "manual" then
         local m = cfg.manual
         if m.w > 0 and m.h > 0 then return { x = m.x, y = m.y, w = m.w, h = m.h } end
-        warn("Área manual inválida (largura/altura 0); usando detecção automática.")
+        warn(T("manual_invalid"))
     else
         local x, y, w, h = mode:match("^mon:(%-?%d+),(%-?%d+),(%d+),(%d+)$")
         if x then return { x = tonumber(x), y = tonumber(y), w = tonumber(w), h = tonumber(h) } end
@@ -463,7 +669,8 @@ local function set_filters_enabled(source, enabled)
 end
 
 local ZOOM_FILTERS = { CROP_FILTER_NAME, SCALE_FILTER_NAME }
-local ALL_FILTERS = { CURSOR_FILTER_NAME, CROP_FILTER_NAME, SCALE_FILTER_NAME }
+local ALL_FILTERS = { CURSOR_FILTER_NAME, CROP_FILTER_NAME, SCALE_FILTER_NAME,
+    LEGACY_FILTER_NAMES[1], LEGACY_FILTER_NAMES[2] }
 
 local function remove_filters_from(source, names)
     for _, name in ipairs(names or ALL_FILTERS) do
@@ -580,8 +787,7 @@ local function resolve_source(quiet)
         local source = obs.obs_get_source_by_name(cfg.source_name)
         if source ~= nil then return source, cfg.source_name end
         if not quiet then
-            warn("A fonte '" .. cfg.source_name .. "' não existe; usando a Captura de Tela da cena atual. " ..
-                "Escolha a fonte certa em Ferramentas > Scripts.")
+            warn(T("source_missing", cfg.source_name))
         end
     end
     local name = find_auto_capture()
@@ -592,13 +798,13 @@ end
 local function begin_session()
     if st.source ~= nil then return true end
     if not IS_WINDOWS then
-        warn("Este script suporta apenas Windows no momento.")
+        warn(T("windows_only"))
         return false
     end
 
     local source, name = resolve_source()
     if source == nil then
-        warn("Nenhuma Captura de Tela encontrada. Adicione uma à cena ou escolha a fonte em Ferramentas > Scripts.")
+        warn(T("no_capture"))
         return false
     end
 
@@ -607,7 +813,7 @@ local function begin_session()
     local w = obs.obs_source_get_width(source)
     local h = obs.obs_source_get_height(source)
     if w == 0 or h == 0 then
-        warn("A fonte '" .. name .. "' está sem imagem (tamanho 0).")
+        warn(T("source_empty", name))
         obs.obs_source_release(source)
         return false
     end
@@ -626,7 +832,7 @@ local function begin_session()
     obs.obs_data_release(ss)
 
     if crop == nil or scale == nil then
-        warn("Não foi possível criar os filtros de zoom na fonte '" .. name .. "'.")
+        warn(T("filters_fail", name))
         if crop ~= nil then obs.obs_source_release(crop) end
         if scale ~= nil then obs.obs_source_release(scale) end
         obs.obs_source_release(source)
@@ -647,8 +853,7 @@ local function begin_session()
     obs.obs_source_set_enabled(crop, true)
     obs.obs_source_set_enabled(scale, true)
 
-    dbg(string.format("Sessão iniciada: fonte '%s' %dx%d, monitor %dx%d @ %d,%d",
-        name, w, h, st.mon.w, st.mon.h, st.mon.x, st.mon.y))
+    dbg(T("session_start", name, w, h, st.mon.w, st.mon.h, st.mon.x, st.mon.y))
     return true
 end
 
@@ -659,7 +864,7 @@ local function end_session()
         obs.obs_source_release(st.crop)
         obs.obs_source_release(st.scale)
         obs.obs_source_release(st.source)
-        dbg("Sessão encerrada.")
+        dbg(T("session_end"))
     end
     st.source, st.crop, st.scale = nil, nil, nil
     st.source_name = nil
@@ -777,14 +982,14 @@ local function zoom_in(level, duration)
             st.level = clamp_level(cfg.zoom_factor)
         end
     end
-    dbg(string.format("Zoom %.2fx", st.level))
+    dbg(T("zoom_level", st.level))
     animate_to(st.level, duration)
 end
 
 local function zoom_out(duration)
     if st.source == nil then return end
     st.zoomed = false
-    dbg("Saindo do zoom")
+    dbg(T("zooming_out"))
     animate_to(1.0, duration)
 end
 
@@ -800,7 +1005,7 @@ local function change_level(delta, duration)
         return
     end
     st.level = clamp_level(new_level)
-    dbg(string.format("Zoom %.2fx", st.level))
+    dbg(T("zoom_level", st.level))
     animate_to(st.level, duration)
 end
 
@@ -810,7 +1015,7 @@ end
 
 local function toggle_follow()
     st.following = not st.following
-    log("Seguir mouse: " .. (st.following and "ativado" or "desativado"))
+    log(T("follow_state", T(st.following and "state_on" or "state_off")))
 end
 
 ---------------------------------------------------------------------------
@@ -975,7 +1180,7 @@ local function cursor_filter_render(data)
     if parent == nil or w == 0 or h == 0 then return end
     if not cur.render_logged then
         cur.render_logged = true
-        dbg(string.format("Desenhando cursor: fonte %dx%d, monitor %dx%d @ %d,%d", w, h, m.w, m.h, m.x, m.y))
+        dbg(T("render_info", w, h, m.w, m.h, m.x, m.y))
     end
     local mx, my = get_cursor_pos()
     if mx == nil then return end
@@ -984,7 +1189,7 @@ local function cursor_filter_render(data)
         cur.effect = obs.gs_effect_create(CIRCLE_EFFECT, "mouse_zoom_circle.effect", nil)
         if cur.effect == nil then
             cur.effect_failed = true
-            warn("Não foi possível criar o efeito de desenho do cursor.")
+            warn(T("effect_fail"))
         end
     end
 
@@ -1039,7 +1244,7 @@ local cursor_filter_info = {
     id = CURSOR_FILTER_ID,
     type = obs.OBS_SOURCE_TYPE_FILTER,
     output_flags = obs.OBS_SOURCE_VIDEO,
-    get_name = function() return "Mouse Zoom: cursor personalizado" end,
+    get_name = function() return T("filter_type_name") end,
     create = function(settings, source) return { source = source } end,
     destroy = function(data) end,
     get_width = function(data) return (filter_input_size(data)) end,
@@ -1063,7 +1268,7 @@ end
 local function restore_capture_cursor()
     if cur.hidden ~= nil then
         set_capture_cursor(cur.hidden, true)
-        dbg("Cursor real reexibido em '" .. cur.hidden .. "'.")
+        dbg(T("cursor_shown", cur.hidden))
         cur.hidden = nil
     end
 end
@@ -1104,7 +1309,7 @@ local function sync_cursor()
                 obs.obs_source_release(f)
                 cur.target = name
                 cur.mon_dirty = true
-                dbg("Filtro de cursor adicionado em '" .. name .. "'.")
+                dbg(T("cursor_filter_added", name))
             end
         end
     end
@@ -1114,7 +1319,7 @@ local function sync_cursor()
         if want_hidden ~= nil then
             set_capture_cursor(want_hidden, false)
             cur.hidden = want_hidden
-            dbg("Cursor real ocultado em '" .. want_hidden .. "'.")
+            dbg(T("cursor_hidden", want_hidden))
         end
     end
 
@@ -1236,29 +1441,29 @@ end
 ---------------------------------------------------------------------------
 
 local HOTKEYS = {
-    { id = "toggle_zoom",   desc = "Mouse Zoom: Ativar/desativar zoom",
+    { id = "toggle_zoom",   desc = "hk_toggle_zoom",
       default = { key = "OBS_KEY_Z", ctrl = true, alt = true },
       cb = function(pressed) if pressed then toggle_zoom() end end },
-    { id = "hold_zoom",     desc = "Mouse Zoom: Zoom enquanto segurar",
+    { id = "hold_zoom",     desc = "hk_hold_zoom",
       default = { key = "OBS_KEY_X", ctrl = true, alt = true },
       cb = function(pressed) if pressed then zoom_in() else zoom_out() end end },
-    { id = "toggle_follow", desc = "Mouse Zoom: Ativar/desativar seguir o mouse",
+    { id = "toggle_follow", desc = "hk_toggle_follow",
       default = { key = "OBS_KEY_F", ctrl = true, alt = true },
       cb = function(pressed) if pressed then toggle_follow() end end },
-    { id = "zoom_more",     desc = "Mouse Zoom: Aumentar zoom",
+    { id = "zoom_more",     desc = "hk_zoom_more",
       default = { key = "OBS_KEY_UP", ctrl = true, alt = true },
       cb = function(pressed) if pressed then change_level(cfg.zoom_step) end end },
-    { id = "zoom_less",     desc = "Mouse Zoom: Diminuir zoom",
+    { id = "zoom_less",     desc = "hk_zoom_less",
       default = { key = "OBS_KEY_DOWN", ctrl = true, alt = true },
       cb = function(pressed) if pressed then change_level(-cfg.zoom_step) end end },
-    { id = "reset_level",   desc = "Mouse Zoom: Voltar ao nível de zoom padrão",
+    { id = "reset_level",   desc = "hk_reset_level",
       default = { key = "OBS_KEY_0", ctrl = true, alt = true },
       cb = function(pressed)
           if not pressed then return end
           st.level = clamp_level(cfg.zoom_factor)
           if st.zoomed then animate_to(st.level) end
       end },
-    { id = "recenter",      desc = "Mouse Zoom: Centralizar no mouse",
+    { id = "recenter",      desc = "hk_recenter",
       default = { key = "OBS_KEY_C", ctrl = true, alt = true },
       cb = function(pressed)
           if not pressed or st.source == nil then return end
@@ -1287,16 +1492,94 @@ local function restore_default_hotkeys()
         obs.obs_hotkey_load(hk.handle, arr)
         obs.obs_data_array_release(arr)
     end
-    log("Atalhos padrão restaurados. Reabra Configurações > Teclas de atalho para vê-los.")
+    log(T("hotkeys_restored"))
 end
 
 ---------------------------------------------------------------------------
 -- Propriedades (interface em Ferramentas > Scripts)
 ---------------------------------------------------------------------------
 
+-- Chave da propriedade -> id do texto. Preenchida ao criar a interface e usada
+-- para retraduzir os rótulos quando o idioma muda.
+local PROP_TEXT = {}
+local function L(key, id)
+    PROP_TEXT[key] = id
+    return T(id)
+end
+
+-- Listas com itens fixos: { valor, id do texto }.
+local STATIC_LISTS = {
+    language = { { "auto", "lang_auto" }, { "pt", "lang_pt" }, { "en", "lang_en" } },
+    easing = {
+        { "linear", "ease_linear" }, { "smooth", "ease_smooth" }, { "cubic", "ease_cubic" },
+        { "quad_out", "ease_quad_out" }, { "expo_out", "ease_expo_out" }, { "back_out", "ease_back_out" },
+    },
+    origin = {
+        { "cursor_anchor", "origin_anchor" }, { "cursor_center", "origin_cursor_center" }, { "center", "origin_center" },
+    },
+    sampling = {
+        { "bilinear", "s_bilinear" }, { "bicubic", "s_bicubic" }, { "lanczos", "s_lanczos" }, { "point", "s_point" },
+    },
+    cursor_style = {
+        { "original", "style_original" }, { "arrow", "style_arrow" }, { "image", "style_image" },
+        { "dot", "style_dot" }, { "hidden", "style_hidden" },
+    },
+}
+
+-- Listas de tecla modificadora (true = lista da rodinha) e de botão do mouse.
+local MODIFIER_LISTS = { wheel_mod = true, btn_toggle_mod = false, btn_hold_mod = false, btn_follow_mod = false }
+local BUTTON_LISTS = { "btn_toggle", "btn_hold", "btn_follow" }
+
+local function fill_static_list(p, key)
+    obs.obs_property_list_clear(p)
+    for _, item in ipairs(STATIC_LISTS[key]) do
+        obs.obs_property_list_add_string(p, T(item[2]), item[1])
+    end
+end
+
+local function add_static_list(props, key, text_id)
+    local p = obs.obs_properties_add_list(props, key, L(key, text_id),
+        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    fill_static_list(p, key)
+    return p
+end
+
+local function fill_modifier_list(p, is_wheel)
+    obs.obs_property_list_clear(p)
+    obs.obs_property_list_add_string(p, T(is_wheel and "mod_none_wheel" or "mod_none"), "none")
+    obs.obs_property_list_add_string(p, "Shift", "shift")
+    obs.obs_property_list_add_string(p, "Ctrl", "ctrl")
+    obs.obs_property_list_add_string(p, "Alt", "alt")
+    obs.obs_property_list_add_string(p, "Ctrl + Shift", "ctrl+shift")
+    obs.obs_property_list_add_string(p, "Ctrl + Alt", "ctrl+alt")
+    obs.obs_property_list_add_string(p, "Shift + Alt", "shift+alt")
+end
+
+local function fill_button_list(p)
+    obs.obs_property_list_clear(p)
+    obs.obs_property_list_add_string(p, T("btn_none"), "none")
+    obs.obs_property_list_add_string(p, T("btn_middle"), "middle")
+    obs.obs_property_list_add_string(p, T("btn_x1"), "x1")
+    obs.obs_property_list_add_string(p, T("btn_x2"), "x2")
+end
+
+local function add_modifier_list(props, key, text_id)
+    local p = obs.obs_properties_add_list(props, key, L(key, text_id),
+        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    fill_modifier_list(p, MODIFIER_LISTS[key])
+    return p
+end
+
+local function add_button_list(props, key, text_id)
+    local p = obs.obs_properties_add_list(props, key, L(key, text_id),
+        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    fill_button_list(p)
+    return p
+end
+
 local function fill_source_list(p)
     obs.obs_property_list_clear(p)
-    obs.obs_property_list_add_string(p, "Automático (Captura de Tela visível na cena atual)", "")
+    obs.obs_property_list_add_string(p, T("src_auto"), "")
     local captures, others, scenes = {}, {}, {}
     local sources = obs.obs_enum_sources()
     if sources ~= nil then
@@ -1320,41 +1603,58 @@ local function fill_source_list(p)
     table.sort(captures)
     table.sort(others)
     table.sort(scenes)
-    for _, n in ipairs(captures) do obs.obs_property_list_add_string(p, n .. "  (Captura de Tela)", n) end
+    for _, n in ipairs(captures) do obs.obs_property_list_add_string(p, n .. T("src_capture_suffix"), n) end
     for _, n in ipairs(others) do obs.obs_property_list_add_string(p, n, n) end
-    for _, n in ipairs(scenes) do obs.obs_property_list_add_string(p, n .. "  (Cena inteira)", n) end
+    for _, n in ipairs(scenes) do obs.obs_property_list_add_string(p, n .. T("src_scene_suffix"), n) end
 end
 
 local function fill_monitor_list(p)
     obs.obs_property_list_clear(p)
-    obs.obs_property_list_add_string(p, "Automático (usa o monitor da Captura de Tela)", "auto")
+    obs.obs_property_list_add_string(p, T("mon_auto"), "auto")
     for i, m in ipairs(enum_monitors()) do
         local label = string.format("Monitor %d: %dx%d @ %d,%d%s",
-            i, m.w, m.h, m.x, m.y, m.primary and " (principal)" or "")
+            i, m.w, m.h, m.x, m.y, m.primary and T("mon_primary") or "")
         obs.obs_property_list_add_string(p, label, string.format("mon:%d,%d,%d,%d", m.x, m.y, m.w, m.h))
     end
-    obs.obs_property_list_add_string(p, "Manual (definir a área abaixo)", "manual")
+    obs.obs_property_list_add_string(p, T("mon_manual"), "manual")
 end
 
-local function add_modifier_list(props, key, label, allow_none_warning)
-    local p = obs.obs_properties_add_list(props, key, label, obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
-    obs.obs_property_list_add_string(p, allow_none_warning and "Nenhuma (qualquer rolagem dá zoom)" or "Nenhuma", "none")
-    obs.obs_property_list_add_string(p, "Shift", "shift")
-    obs.obs_property_list_add_string(p, "Ctrl", "ctrl")
-    obs.obs_property_list_add_string(p, "Alt", "alt")
-    obs.obs_property_list_add_string(p, "Ctrl + Shift", "ctrl+shift")
-    obs.obs_property_list_add_string(p, "Ctrl + Alt", "ctrl+alt")
-    obs.obs_property_list_add_string(p, "Shift + Alt", "shift+alt")
-    return p
+-- Reaplica todos os textos da interface no idioma atual.
+local function relabel_properties(props)
+    for key, id in pairs(PROP_TEXT) do
+        local p = obs.obs_properties_get(props, key)
+        if p ~= nil then obs.obs_property_set_description(p, T(id)) end
+    end
+    for key in pairs(STATIC_LISTS) do
+        local p = obs.obs_properties_get(props, key)
+        if p ~= nil then fill_static_list(p, key) end
+    end
+    for key, is_wheel in pairs(MODIFIER_LISTS) do
+        local p = obs.obs_properties_get(props, key)
+        if p ~= nil then fill_modifier_list(p, is_wheel) end
+    end
+    for _, key in ipairs(BUTTON_LISTS) do
+        local p = obs.obs_properties_get(props, key)
+        if p ~= nil then fill_button_list(p) end
+    end
+    local p = obs.obs_properties_get(props, "source_name")
+    if p ~= nil then fill_source_list(p) end
+    p = obs.obs_properties_get(props, "monitor_mode")
+    if p ~= nil then fill_monitor_list(p) end
 end
 
-local function add_button_list(props, key, label)
-    local p = obs.obs_properties_add_list(props, key, label, obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
-    obs.obs_property_list_add_string(p, "Nenhum", "none")
-    obs.obs_property_list_add_string(p, "Botão do meio (clique da rodinha)", "middle")
-    obs.obs_property_list_add_string(p, "Botão lateral 1 (voltar)", "x1")
-    obs.obs_property_list_add_string(p, "Botão lateral 2 (avançar)", "x2")
-    return p
+-- Idioma em que os rótulos da interface aberta foram criados.
+local ui_lang = nil
+
+local function on_language_modified(props, prop, settings)
+    LANG = resolve_lang(obs.obs_data_get_string(settings, "language"))
+    if LANG ~= ui_lang then
+        local first = (ui_lang == nil)
+        ui_lang = LANG
+        relabel_properties(props)
+        if not first then log(T("lang_reload")) end
+    end
+    return true
 end
 
 -- Campos do grupo de cursor e os estilos em que aparecem.
@@ -1402,137 +1702,122 @@ end
 
 function script_properties()
     local props = obs.obs_properties_create()
+    ui_lang = LANG
+
+    -- Idioma (rótulo fixo nos dois idiomas)
+    local p_lang = obs.obs_properties_add_list(props, "language", "Idioma / Language",
+        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    fill_static_list(p_lang, "language")
+    obs.obs_property_set_modified_callback(p_lang, on_language_modified)
 
     -- Fonte
     local g = obs.obs_properties_create()
-    local p_src = obs.obs_properties_add_list(g, "source_name", "Fonte ou cena para dar zoom",
+    local p_src = obs.obs_properties_add_list(g, "source_name", L("source_name", "p_source"),
         obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
     fill_source_list(p_src)
-    obs.obs_properties_add_button(g, "refresh_sources", "Atualizar lista de fontes", function(pp)
+    obs.obs_properties_add_button(g, "refresh_sources", L("refresh_sources", "b_refresh_sources"), function(pp)
         fill_source_list(obs.obs_properties_get(pp, "source_name"))
         return true
     end)
-    obs.obs_properties_add_group(props, "grp_source", "Fonte", obs.OBS_GROUP_NORMAL, g)
+    obs.obs_properties_add_group(props, "grp_source", L("grp_source", "g_source"), obs.OBS_GROUP_NORMAL, g)
 
     -- Zoom
     g = obs.obs_properties_create()
-    obs.obs_properties_add_float_slider(g, "zoom_factor", "Nível de zoom padrão (x)", 1.05, 10.0, 0.05)
-    obs.obs_properties_add_float_slider(g, "zoom_step", "Passo dos atalhos de aumentar/diminuir (x)", 0.05, 3.0, 0.05)
-    obs.obs_properties_add_float_slider(g, "zoom_min", "Zoom mínimo (x)", 1.05, 10.0, 0.05)
-    obs.obs_properties_add_float_slider(g, "zoom_max", "Zoom máximo (x)", 1.05, 20.0, 0.05)
-    obs.obs_properties_add_bool(g, "remember_level", "Lembrar o último nível de zoom usado")
-    obs.obs_properties_add_int_slider(g, "duration_ms", "Duração da animação (ms, 0 = instantâneo)", 0, 3000, 10)
-    local p_ease = obs.obs_properties_add_list(g, "easing", "Curva da animação",
-        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
-    obs.obs_property_list_add_string(p_ease, "Linear", "linear")
-    obs.obs_property_list_add_string(p_ease, "Suave (smoothstep)", "smooth")
-    obs.obs_property_list_add_string(p_ease, "Acelera e desacelera (cúbica)", "cubic")
-    obs.obs_property_list_add_string(p_ease, "Desacelera no fim (quadrática)", "quad_out")
-    obs.obs_property_list_add_string(p_ease, "Desacelera forte (exponencial)", "expo_out")
-    obs.obs_property_list_add_string(p_ease, "Com leve ultrapassagem (back)", "back_out")
-    local p_origin = obs.obs_properties_add_list(g, "origin", "Origem do zoom",
-        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
-    obs.obs_property_list_add_string(p_origin, "Cursor (o ponto sob o mouse fica parado)", "cursor_anchor")
-    obs.obs_property_list_add_string(p_origin, "Cursor (centraliza no mouse)", "cursor_center")
-    obs.obs_property_list_add_string(p_origin, "Centro da área visível", "center")
-    local p_sampling = obs.obs_properties_add_list(g, "sampling", "Qualidade da ampliação",
-        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
-    obs.obs_property_list_add_string(p_sampling, "Bilinear (mais leve)", "bilinear")
-    obs.obs_property_list_add_string(p_sampling, "Bicúbico (recomendado)", "bicubic")
-    obs.obs_property_list_add_string(p_sampling, "Lanczos (mais nítido)", "lanczos")
-    obs.obs_property_list_add_string(p_sampling, "Pixels nítidos (ponto)", "point")
-    obs.obs_properties_add_group(props, "grp_zoom", "Zoom", obs.OBS_GROUP_NORMAL, g)
+    obs.obs_properties_add_float_slider(g, "zoom_factor", L("zoom_factor", "p_zoom_factor"), 1.05, 10.0, 0.05)
+    obs.obs_properties_add_float_slider(g, "zoom_step", L("zoom_step", "p_zoom_step"), 0.05, 3.0, 0.05)
+    obs.obs_properties_add_float_slider(g, "zoom_min", L("zoom_min", "p_zoom_min"), 1.05, 10.0, 0.05)
+    obs.obs_properties_add_float_slider(g, "zoom_max", L("zoom_max", "p_zoom_max"), 1.05, 20.0, 0.05)
+    obs.obs_properties_add_bool(g, "remember_level", L("remember_level", "p_remember"))
+    obs.obs_properties_add_int_slider(g, "duration_ms", L("duration_ms", "p_duration"), 0, 3000, 10)
+    add_static_list(g, "easing", "p_easing")
+    add_static_list(g, "origin", "p_origin")
+    add_static_list(g, "sampling", "p_sampling")
+    obs.obs_properties_add_group(props, "grp_zoom", L("grp_zoom", "g_zoom"), obs.OBS_GROUP_NORMAL, g)
 
     -- Seguir mouse
     g = obs.obs_properties_create()
-    obs.obs_properties_add_bool(g, "follow_on_zoom", "Seguir o mouse automaticamente ao dar zoom")
-    obs.obs_properties_add_float_slider(g, "follow_speed", "Velocidade de acompanhamento (50 = instantâneo)", 1, 50, 0.5)
-    obs.obs_properties_add_int_slider(g, "dead_zone", "Zona morta (% central sem mover a câmera)", 0, 100, 1)
-    obs.obs_properties_add_bool(g, "follow_outside", "Continuar seguindo quando o mouse sair da tela capturada")
-    obs.obs_properties_add_float_slider(g, "idle_timeout", "Sair do zoom após mouse parado (s, 0 = nunca)", 0, 120, 0.5)
-    obs.obs_properties_add_group(props, "grp_follow", "Seguir o mouse", obs.OBS_GROUP_NORMAL, g)
+    obs.obs_properties_add_bool(g, "follow_on_zoom", L("follow_on_zoom", "p_follow_on_zoom"))
+    obs.obs_properties_add_float_slider(g, "follow_speed", L("follow_speed", "p_follow_speed"), 1, 50, 0.5)
+    obs.obs_properties_add_int_slider(g, "dead_zone", L("dead_zone", "p_dead_zone"), 0, 100, 1)
+    obs.obs_properties_add_bool(g, "follow_outside", L("follow_outside", "p_follow_outside"))
+    obs.obs_properties_add_float_slider(g, "idle_timeout", L("idle_timeout", "p_idle_timeout"), 0, 120, 0.5)
+    obs.obs_properties_add_group(props, "grp_follow", L("grp_follow", "g_follow"), obs.OBS_GROUP_NORMAL, g)
 
     -- Controles pelo mouse
     g = obs.obs_properties_create()
-    obs.obs_properties_add_bool(g, "wheel_enabled", "Zoom com a rodinha do mouse")
-    add_modifier_list(g, "wheel_mod", "Tecla para segurar junto com a rodinha", true)
-    obs.obs_properties_add_float_slider(g, "wheel_step", "Zoom por clique da rodinha (x)", 0.05, 2.0, 0.05)
-    obs.obs_properties_add_bool(g, "wheel_invert", "Inverter direção da rodinha")
-    obs.obs_properties_add_int_slider(g, "wheel_duration_ms", "Duração da animação da rodinha (ms)", 0, 1000, 10)
-    add_button_list(g, "btn_toggle", "Botão: ativar/desativar zoom")
-    add_modifier_list(g, "btn_toggle_mod", "   Tecla junto com o botão")
-    add_button_list(g, "btn_hold", "Botão: zoom enquanto segurar")
-    add_modifier_list(g, "btn_hold_mod", "   Tecla junto com o botão")
-    add_button_list(g, "btn_follow", "Botão: ativar/desativar seguir")
-    add_modifier_list(g, "btn_follow_mod", "   Tecla junto com o botão")
-    obs.obs_properties_add_group(props, "grp_mouse", "Controles pelo mouse", obs.OBS_GROUP_NORMAL, g)
+    obs.obs_properties_add_bool(g, "wheel_enabled", L("wheel_enabled", "p_wheel_enabled"))
+    add_modifier_list(g, "wheel_mod", "p_wheel_mod")
+    obs.obs_properties_add_float_slider(g, "wheel_step", L("wheel_step", "p_wheel_step"), 0.05, 2.0, 0.05)
+    obs.obs_properties_add_bool(g, "wheel_invert", L("wheel_invert", "p_wheel_invert"))
+    obs.obs_properties_add_int_slider(g, "wheel_duration_ms", L("wheel_duration_ms", "p_wheel_duration"), 0, 1000, 10)
+    add_button_list(g, "btn_toggle", "p_btn_toggle")
+    add_modifier_list(g, "btn_toggle_mod", "p_btn_mod")
+    add_button_list(g, "btn_hold", "p_btn_hold")
+    add_modifier_list(g, "btn_hold_mod", "p_btn_mod")
+    add_button_list(g, "btn_follow", "p_btn_follow")
+    add_modifier_list(g, "btn_follow_mod", "p_btn_mod")
+    obs.obs_properties_add_group(props, "grp_mouse", L("grp_mouse", "g_mouse"), obs.OBS_GROUP_NORMAL, g)
 
     -- Cursor
     g = obs.obs_properties_create()
-    local p_style = obs.obs_properties_add_list(g, "cursor_style", "Aparência do cursor",
-        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
-    obs.obs_property_list_add_string(p_style, "Original (cursor capturado pelo OBS)", "original")
-    obs.obs_property_list_add_string(p_style, "Seta (cores personalizadas)", "arrow")
-    obs.obs_property_list_add_string(p_style, "Imagem personalizada (PNG, GIF...)", "image")
-    obs.obs_property_list_add_string(p_style, "Ponto colorido", "dot")
-    obs.obs_property_list_add_string(p_style, "Oculto", "hidden")
+    local p_style = add_static_list(g, "cursor_style", "p_cursor_style")
     obs.obs_property_set_modified_callback(p_style, on_cursor_options_modified)
-    obs.obs_properties_add_int_slider(g, "cursor_size", "Tamanho do cursor (px)", 8, 200, 1)
-    obs.obs_properties_add_color_alpha(g, "arrow_fill", "Cor da seta")
-    obs.obs_properties_add_color_alpha(g, "arrow_outline", "Cor do contorno da seta")
-    obs.obs_properties_add_color_alpha(g, "dot_color", "Cor do ponto")
-    obs.obs_properties_add_path(g, "cursor_image", "Imagem do cursor", obs.OBS_PATH_FILE,
-        "Imagens (*.png *.gif *.jpg *.jpeg *.bmp *.webp)", nil)
-    obs.obs_properties_add_float_slider(g, "cursor_image_scale", "Escala da imagem", 0.1, 5.0, 0.05)
-    obs.obs_properties_add_int(g, "cursor_hotspot_x", "Ponta do cursor na imagem: X (px)", 0, 1024, 1)
-    obs.obs_properties_add_int(g, "cursor_hotspot_y", "Ponta do cursor na imagem: Y (px)", 0, 1024, 1)
-    obs.obs_properties_add_float_slider(g, "cursor_hide_idle", "Esconder cursor após parado (s, 0 = nunca)", 0, 30, 0.5)
-    obs.obs_properties_add_bool(g, "cursor_keep_size", "Manter o tamanho do cursor e dos efeitos durante o zoom")
-    local p_halo = obs.obs_properties_add_bool(g, "halo_enabled", "Destaque (círculo em volta do cursor)")
+    obs.obs_properties_add_int_slider(g, "cursor_size", L("cursor_size", "p_cursor_size"), 8, 200, 1)
+    obs.obs_properties_add_color_alpha(g, "arrow_fill", L("arrow_fill", "p_arrow_fill"))
+    obs.obs_properties_add_color_alpha(g, "arrow_outline", L("arrow_outline", "p_arrow_outline"))
+    obs.obs_properties_add_color_alpha(g, "dot_color", L("dot_color", "p_dot_color"))
+    obs.obs_properties_add_path(g, "cursor_image", L("cursor_image", "p_cursor_image"), obs.OBS_PATH_FILE,
+        T("image_filter"), nil)
+    obs.obs_properties_add_float_slider(g, "cursor_image_scale", L("cursor_image_scale", "p_image_scale"), 0.1, 5.0, 0.05)
+    obs.obs_properties_add_int(g, "cursor_hotspot_x", L("cursor_hotspot_x", "p_hotspot_x"), 0, 1024, 1)
+    obs.obs_properties_add_int(g, "cursor_hotspot_y", L("cursor_hotspot_y", "p_hotspot_y"), 0, 1024, 1)
+    obs.obs_properties_add_float_slider(g, "cursor_hide_idle", L("cursor_hide_idle", "p_hide_idle"), 0, 30, 0.5)
+    obs.obs_properties_add_bool(g, "cursor_keep_size", L("cursor_keep_size", "p_keep_size"))
+    local p_halo = obs.obs_properties_add_bool(g, "halo_enabled", L("halo_enabled", "p_halo"))
     obs.obs_property_set_modified_callback(p_halo, on_cursor_options_modified)
-    obs.obs_properties_add_color_alpha(g, "halo_color", "   Cor do destaque")
-    obs.obs_properties_add_int_slider(g, "halo_size", "   Tamanho do destaque (px)", 10, 400, 1)
-    local p_click = obs.obs_properties_add_bool(g, "click_enabled", "Efeito de clique")
+    obs.obs_properties_add_color_alpha(g, "halo_color", L("halo_color", "p_halo_color"))
+    obs.obs_properties_add_int_slider(g, "halo_size", L("halo_size", "p_halo_size"), 10, 400, 1)
+    local p_click = obs.obs_properties_add_bool(g, "click_enabled", L("click_enabled", "p_click"))
     obs.obs_property_set_modified_callback(p_click, on_cursor_options_modified)
-    obs.obs_properties_add_color_alpha(g, "click_left_color", "   Cor do clique esquerdo")
-    obs.obs_properties_add_color_alpha(g, "click_right_color", "   Cor do clique direito")
-    obs.obs_properties_add_int_slider(g, "click_size", "   Tamanho do efeito (px)", 10, 400, 1)
-    obs.obs_properties_add_int_slider(g, "click_duration_ms", "   Duração do efeito (ms)", 100, 2000, 10)
-    obs.obs_properties_add_group(props, "grp_cursor", "Cursor do mouse", obs.OBS_GROUP_NORMAL, g)
+    obs.obs_properties_add_color_alpha(g, "click_left_color", L("click_left_color", "p_click_left"))
+    obs.obs_properties_add_color_alpha(g, "click_right_color", L("click_right_color", "p_click_right"))
+    obs.obs_properties_add_int_slider(g, "click_size", L("click_size", "p_click_size"), 10, 400, 1)
+    obs.obs_properties_add_int_slider(g, "click_duration_ms", L("click_duration_ms", "p_click_duration"), 100, 2000, 10)
+    obs.obs_properties_add_group(props, "grp_cursor", L("grp_cursor", "g_cursor"), obs.OBS_GROUP_NORMAL, g)
 
     -- Monitor
     g = obs.obs_properties_create()
-    local p_mon = obs.obs_properties_add_list(g, "monitor_mode", "Tela capturada",
+    local p_mon = obs.obs_properties_add_list(g, "monitor_mode", L("monitor_mode", "p_monitor_mode"),
         obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
     fill_monitor_list(p_mon)
     obs.obs_property_set_modified_callback(p_mon, on_monitor_mode_modified)
-    obs.obs_properties_add_button(g, "refresh_monitors", "Detectar monitores novamente", function(pp)
+    obs.obs_properties_add_button(g, "refresh_monitors", L("refresh_monitors", "b_refresh_monitors"), function(pp)
         fill_monitor_list(obs.obs_properties_get(pp, "monitor_mode"))
         return true
     end)
-    obs.obs_properties_add_int(g, "manual_x", "Área manual: X", -32768, 32768, 1)
-    obs.obs_properties_add_int(g, "manual_y", "Área manual: Y", -32768, 32768, 1)
-    obs.obs_properties_add_int(g, "manual_w", "Área manual: largura", 0, 32768, 1)
-    obs.obs_properties_add_int(g, "manual_h", "Área manual: altura", 0, 32768, 1)
-    obs.obs_properties_add_group(props, "grp_monitor", "Monitor", obs.OBS_GROUP_NORMAL, g)
+    obs.obs_properties_add_int(g, "manual_x", L("manual_x", "p_manual_x"), -32768, 32768, 1)
+    obs.obs_properties_add_int(g, "manual_y", L("manual_y", "p_manual_y"), -32768, 32768, 1)
+    obs.obs_properties_add_int(g, "manual_w", L("manual_w", "p_manual_w"), 0, 32768, 1)
+    obs.obs_properties_add_int(g, "manual_h", L("manual_h", "p_manual_h"), 0, 32768, 1)
+    obs.obs_properties_add_group(props, "grp_monitor", L("grp_monitor", "g_monitor"), obs.OBS_GROUP_NORMAL, g)
 
     -- Atalhos e avançado
     g = obs.obs_properties_create()
-    obs.obs_properties_add_button(g, "restore_hotkeys", "Restaurar atalhos de teclado padrão", function()
+    obs.obs_properties_add_button(g, "restore_hotkeys", L("restore_hotkeys", "b_restore_hotkeys"), function()
         restore_default_hotkeys()
         return false
     end)
-    obs.obs_properties_add_button(g, "log_cursor", "Mostrar posição do mouse no log", function()
+    obs.obs_properties_add_button(g, "log_cursor", L("log_cursor", "b_log_cursor"), function()
         local mx, my = get_cursor_pos()
         if mx == nil then
-            log("Não foi possível ler a posição do mouse.")
+            log(T("cursor_read_fail"))
         else
-            log(string.format("Mouse na tela: %d, %d", mx, my))
+            log(T("cursor_pos", mx, my))
         end
         return false
     end)
-    obs.obs_properties_add_bool(g, "debug", "Registrar mensagens de depuração no log")
-    obs.obs_properties_add_group(props, "grp_advanced", "Atalhos e avançado", obs.OBS_GROUP_NORMAL, g)
+    obs.obs_properties_add_bool(g, "debug", L("debug", "p_debug"))
+    obs.obs_properties_add_group(props, "grp_advanced", L("grp_advanced", "g_advanced"), obs.OBS_GROUP_NORMAL, g)
 
     return props
 end
@@ -1566,6 +1851,7 @@ function script_defaults(settings)
     obs.obs_data_set_default_string(settings, "btn_follow_mod", "none")
     obs.obs_data_set_default_string(settings, "monitor_mode", "auto")
     obs.obs_data_set_default_bool(settings, "debug", false)
+    obs.obs_data_set_default_string(settings, "language", "auto")
     obs.obs_data_set_default_string(settings, "cursor_style", "original")
     obs.obs_data_set_default_int(settings, "cursor_size", 32)
     obs.obs_data_set_default_int(settings, "arrow_fill", 0xFFFFFFFF)
@@ -1585,6 +1871,10 @@ function script_defaults(settings)
     obs.obs_data_set_default_int(settings, "click_right_color", 0xCC3D5BFF)
     obs.obs_data_set_default_int(settings, "click_size", 50)
     obs.obs_data_set_default_int(settings, "click_duration_ms", 400)
+
+    -- O OBS chama script_defaults com as configurações salvas antes de pedir a
+    -- descrição, então o idioma escolhido já vale para a descrição e os atalhos.
+    LANG = resolve_lang(obs.obs_data_get_string(settings, "language"))
 end
 
 function script_update(settings)
@@ -1629,6 +1919,7 @@ function script_update(settings)
     cfg.manual.w = obs.obs_data_get_int(settings, "manual_w")
     cfg.manual.h = obs.obs_data_get_int(settings, "manual_h")
     cfg.debug = obs.obs_data_get_bool(settings, "debug")
+    LANG = resolve_lang(obs.obs_data_get_string(settings, "language"))
 
     cfg.cursor_style = obs.obs_data_get_string(settings, "cursor_style")
     cfg.cursor_size = obs.obs_data_get_int(settings, "cursor_size")
@@ -1650,7 +1941,7 @@ function script_update(settings)
     cfg.click_size = obs.obs_data_get_int(settings, "click_size")
     cfg.click_duration = obs.obs_data_get_int(settings, "click_duration_ms") / 1000
     if cfg.cursor_style == "image" and cfg.cursor_image == "" then
-        warn("Estilo 'Imagem personalizada' sem imagem escolhida; usando a seta.")
+        warn(T("image_missing"))
     end
     sync_cursor_image()
     cur.mon_dirty = true
@@ -1747,7 +2038,7 @@ end
 function script_load(settings)
     local initialized = obs.obs_data_get_bool(settings, "hotkeys_initialized")
     for _, hk in ipairs(HOTKEYS) do
-        hk.handle = obs.obs_hotkey_register_frontend("mouse_zoom_follow." .. hk.id, hk.desc, hk.cb)
+        hk.handle = obs.obs_hotkey_register_frontend("mouse_zoom_follow." .. hk.id, T(hk.desc), hk.cb)
         local arr
         if initialized then
             arr = obs.obs_data_get_array(settings, "hotkey_" .. hk.id)
@@ -1760,8 +2051,8 @@ function script_load(settings)
     end
     obs.obs_frontend_add_event_callback(on_frontend_event)
     obs.obs_register_source(cursor_filter_info)
-    log("Mouse Zoom & Follow " .. SCRIPT_VERSION .. " carregado.")
-    if not IS_WINDOWS then warn("Mouse Zoom & Follow: apenas Windows é suportado no momento.") end
+    log(T("loaded", SCRIPT_VERSION))
+    if not IS_WINDOWS then warn(T("windows_only")) end
 end
 
 function script_save(settings)
@@ -1792,19 +2083,19 @@ end
 function script_description()
     return [[
 <h2>Mouse Zoom &amp; Follow ]] .. SCRIPT_VERSION .. [[</h2>
-<p>Feito por <b>Pablo Ruan</b> — <a href="https://github.com/pabloruancoder/mouse-zoom-follow">github.com/pabloruancoder/mouse-zoom-follow</a></p>
-<p>Dá zoom na fonte ou cena escolhida em volta do cursor e faz a imagem seguir o mouse.
-Funciona em qualquer cena onde a fonte aparecer.</p>
-<p><b>Mouse:</b> <b>Shift + rodinha</b> aumenta/diminui o zoom (configurável abaixo).</p>
-<p><b>Cursor:</b> troque a aparência do cursor, adicione destaque e efeito de clique no grupo "Cursor do mouse".</p>
-<p><b>Teclado</b> (mude em Configurações &gt; Teclas de atalho):</p>
+<p>]] .. T("d_by") .. [[ <b>Pablo Ruan</b> — <a href="https://github.com/pabloruancoder/mouse-zoom-follow">github.com/pabloruancoder/mouse-zoom-follow</a></p>
+<p>]] .. T("d_intro") .. [[</p>
+<p>]] .. T("d_mouse") .. [[</p>
+<p>]] .. T("d_cursor") .. [[</p>
+<p>]] .. T("d_keyboard") .. [[</p>
 <ul>
-<li><b>Ctrl+Alt+Z</b> — ativar/desativar zoom</li>
-<li><b>Ctrl+Alt+X</b> — zoom enquanto segurar</li>
-<li><b>Ctrl+Alt+F</b> — ativar/desativar seguir o mouse</li>
-<li><b>Ctrl+Alt+↑ / ↓</b> — aumentar / diminuir zoom</li>
-<li><b>Ctrl+Alt+0</b> — voltar ao nível de zoom padrão</li>
-<li><b>Ctrl+Alt+C</b> — centralizar no mouse</li>
+<li><b>Ctrl+Alt+Z</b> — ]] .. T("d_k_toggle") .. [[</li>
+<li><b>Ctrl+Alt+X</b> — ]] .. T("d_k_hold") .. [[</li>
+<li><b>Ctrl+Alt+F</b> — ]] .. T("d_k_follow") .. [[</li>
+<li><b>Ctrl+Alt+↑ / ↓</b> — ]] .. T("d_k_inout") .. [[</li>
+<li><b>Ctrl+Alt+0</b> — ]] .. T("d_k_reset") .. [[</li>
+<li><b>Ctrl+Alt+C</b> — ]] .. T("d_k_center") .. [[</li>
 </ul>
+<p><i>Idioma / Language: ]] .. T("d_lang") .. [[</i></p>
 ]]
 end
