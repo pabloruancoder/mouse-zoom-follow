@@ -82,10 +82,6 @@ Para o zoom, o script adiciona à fonte dois filtros próprios, **Mouse Zoom (cr
 
 A rodinha e os botões do mouse são lidos pelo Raw Input do Windows. O evento continua chegando ao programa em foco: com Shift + rodinha, um navegador também vai rolar para o lado. Se isso atrapalhar, escolha outra tecla, como Ctrl + Alt.
 
-## Uso de IA
-
-Este script foi escrito com a ajuda de um assistente de programação com IA (Claude Code, da Anthropic), que gerou a maior parte do código a partir dos requisitos e do feedback do autor. O autor definiu as funcionalidades e testou cada versão no OBS Studio 32.2.2 no Windows. A lógica também foi verificada com testes automatizados que rodam o script sobre uma API do OBS simulada.
-
 ## Limitações conhecidas
 
 - Por enquanto funciona só no Windows.
