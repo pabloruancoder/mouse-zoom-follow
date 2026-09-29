@@ -82,10 +82,6 @@ For zooming, the script adds two filters of its own to the source, **Mouse Zoom 
 
 The mouse wheel and buttons are read through Windows Raw Input. The event still reaches the focused application: with Shift + wheel, a browser will also scroll sideways. If that bothers you, pick another key, such as Ctrl + Alt.
 
-## AI disclosure
-
-This script was written with the help of an AI coding assistant (Claude Code, by Anthropic), which generated most of the code from the author's requirements and feedback. The author defined the features and tested each version in OBS Studio 32.2.2 on Windows. The logic was also checked with automated tests that run the script against a simulated OBS API.
-
 ## Known limitations
 
 - Windows only for now.
